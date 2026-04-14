@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>reading-record 開発記録 2026-04-15</title>
+<style>
+  body { font-family: "Hiragino Sans", "Yu Gothic", sans-serif; line-height: 1.7; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #333; }
+  h1 { border-bottom: 3px solid #4a90e2; padding-bottom: 8px; }
+  h2 { border-left: 5px solid #4a90e2; padding-left: 10px; margin-top: 32px; }
+  h3 { color: #4a90e2; margin-top: 24px; }
+  code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: Menlo, monospace; font-size: 0.9em; }
+  pre { background: #2d2d2d; color: #f8f8f2; padding: 14px; border-radius: 6px; overflow-x: auto; font-size: 0.9em; }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+  th { background: #f4f4f4; }
+  .note { background: #fff8e1; border-left: 4px solid #ffc107; padding: 10px 14px; margin: 12px 0; }
+  .error { background: #ffebee; border-left: 4px solid #e53935; padding: 10px 14px; margin: 12px 0; }
+  .tip { background: #e8f5e9; border-left: 4px solid #43a047; padding: 10px 14px; margin: 12px 0; }
+  ul { padding-left: 22px; }
+</style>
+</head>
+<body>
+
+<h1>reading-record 開発記録</h1>
+<p><strong>日付:</strong> 2026-04-15</p>
+<p><strong>概要:</strong> TodoアプリCRUDの発展版として、読書記録アプリ（reading-record）の開発を開始。初日はアプリ要件の整理、DB設計、マイグレーション・モデル・Enum・シーダーの作成まで実施。</p>
+
+<h2>1. 今日の作業手順</h2>
+
+<h3>1-1. Sail 起動時のエラー対応</h3>
+<div class="error">
+<strong>エラー:</strong><br>
+<code>Bind for 0.0.0.0:80 failed: port is already allocated</code>
+</div>
+<p><strong>原因:</strong> 別プロジェクト（todo-app）のSailコンテナが既にポート80を使用していた。</p>
+<p><strong>対応:</strong></p>
+<ul>
+  <li><code>docker ps</code> と <code>lsof -iTCP:80</code> で占有プロセスを特定</li>
+  <li>todo-app 側を <code>sail down</code> で停止</li>
+  <li>reading-record を <code>sail up -d</code> で起動成功</li>
+</ul>
+<div class="tip">
+<strong>別解:</strong> <code>.env</code> に <code>APP_PORT=8080</code> を追加すれば、ポートをずらして両方起動も可能。
+</div>
+
+<h3>1-2. セッションテーブル未作成エラー</h3>
+<div class="error">
+<strong>エラー:</strong><br>
+<code>Base table or view not found: Table 'laravel.sessions' doesn't exist</code>
+</div>
+<p><strong>対応:</strong> マイグレーションが未実行だったため実行予定（本日は別作業を優先し、後続のマイグレーションと一緒に実行する方針）。</p>
+
+<h3>1-3. 要件整理</h3>
+<ul>
+  <li>ユーザー認証は今回は対象外（将来Admin画面も作る可能性があるため、今回は除外）</li>
+  <li>最初の画面は書籍一覧</li>
+  <li>書籍の記録項目: タイトル / 著者 / 出版社 / ジャンル / 読書開始日 / 読了日 / ステータス</li>
+  <li>詳細画面では上記に加えて「内容の要約」「自分の感想」欄を持つ</li>
+  <li>ステータスは一覧・詳細どちらでもプルダウンで即時変更</li>
+  <li>削除は論理削除</li>
+  <li>一覧にソート（デフォルト: 作成日降順）と検索（タイトル・著者・出版社・ジャンル・ステータス）機能</li>
+  <li>ジャンルはマスタテーブルで管理</li>
+  <li>ステータスは3固定値（未読 / 読書中 / 読了）</li>
+</ul>
+
+<h3>1-4. ファイル生成</h3>
+<pre><code>sail artisan make:model Genre -m
+sail artisan make:model Book -mc --resource
+sail artisan make:seeder GenreSeeder</code></pre>
+
+<h3>1-5. マイグレーション作成</h3>
+<p><strong>genres テーブル:</strong></p>
+<pre><code>Schema::create('genres', function (Blueprint $table) {
+    $table->id();
+    $table->string('name')->unique();
+    $table->timestamps();
+});</code></pre>
+
+<p><strong>books テーブル:</strong></p>
+<pre><code>Schema::create('books', function (Blueprint $table) {
+    $table->id();
+    $table->string('title');
+    $table->string('author');
+    $table->string('publisher')->nullable();
+    $table->foreignId('genre_id')->constrained()->restrictOnDelete();
+    $table->date('started_at')->nullable();
+    $table->date('finished_at')->nullable();
+    $table->string('status')->default('unread');
+    $table->text('summary')->nullable();
+    $table->text('impression')->nullable();
+    $table->timestamps();
+    $table->softDeletes();
+});</code></pre>
+
+<h3>1-6. PHP Enum 作成</h3>
+<p><code>app/Enums/BookStatus.php</code></p>
+<pre><code>enum BookStatus: string
+{
+    case Unread = 'unread';
+    case Reading = 'reading';
+    case Read = 'read';
+
+    public function label(): string
+    {
+        return match ($this) {
+            self::Unread => '未読',
+            self::Reading => '読書中',
+            self::Read => '読了',
+        };
+    }
+}</code></pre>
+
+<h3>1-7. モデル作成</h3>
+<ul>
+  <li><code>Genre</code> モデル: <code>$fillable = ['name']</code>、<code>books()</code> リレーション（HasMany）</li>
+  <li><code>Book</code> モデル: <code>SoftDeletes</code> トレイト、<code>$fillable</code>、<code>$casts</code>（<code>started_at</code>/<code>finished_at</code> は date、<code>status</code> は BookStatus Enum）、<code>genre()</code> リレーション（BelongsTo）</li>
+</ul>
+
+<h2>2. 学びと判断ポイント</h2>
+
+<h3>2-1. DB enum か PHP Enum か</h3>
+<table>
+  <tr><th></th><th>DBのenum型</th><th>DB string + PHP Enum</th></tr>
+  <tr><td>値の制約</td><td>DB側で強制</td><td>アプリ側（Enumクラス）で制御</td></tr>
+  <tr><td>選択肢変更コスト</td><td>高い（ALTER TABLE 必要）</td><td>低い（コード修正のみ）</td></tr>
+  <tr><td>型安全性</td><td>PHP側は文字列のまま</td><td>IDE補完・比較が型で効く</td></tr>
+  <tr><td>DB移行耐性</td><td>DB依存</td><td>非依存</td></tr>
+</table>
+<p><strong>採用:</strong> DB は string、PHP は Enum クラスでキャスト。学習効果が高くメンテナンスも楽。</p>
+
+<h3>2-2. 外部キー制約の挙動</h3>
+<ul>
+  <li><code>cascadeOnUpdate()</code>: 親の id 変更時に子も追随（ほぼ使わない）</li>
+  <li><code>cascadeOnDelete()</code>: 親削除で子も削除</li>
+  <li><code>restrictOnDelete()</code>: 子がいれば親削除を禁止（今回採用）</li>
+  <li><code>nullOnDelete()</code>: 親削除で子の外部キーを NULL に</li>
+</ul>
+
+<h3>2-3. マイグレーション順序</h3>
+<p>外部キーで参照される側（genres）が先に作られる必要がある。Laravelはファイル名の日時プレフィックスで実行順を決めるため、<strong>genres のファイルが books より古い日時</strong>になっていることを確認する。</p>
+
+<h3>2-4. シーダーの役割</h3>
+<p>GenreSeeder でジャンルマスタ（小説・ビジネス・技術書 等）を投入。<code>firstOrCreate</code> を使うことで、シーダーの再実行でも重複を避けられる。</p>
+
+<h2>3. 明日以降のタスク</h2>
+<ol>
+  <li><code>sail artisan migrate --seed</code> の実行（セッションテーブル未作成エラーもここで解消）</li>
+  <li>ルート定義（<code>Route::resource('books', BookController::class)</code> ＋ ステータス更新用ルート）</li>
+  <li>BookController 実装
+    <ul>
+      <li>index: デフォルト <code>created_at DESC</code>、検索パラメータでフィルタ</li>
+      <li>show / create / store / edit / update / destroy（論理削除）</li>
+      <li>updateStatus: ステータス即時保存用のアクション（JSON返却）</li>
+    </ul>
+  </li>
+  <li>ビュー作成（一覧・詳細・作成・編集）</li>
+  <li>ステータス即保存用 JS（fetchでPATCH）</li>
+  <li>検索フォーム & ソート</li>
+</ol>
+
+<h2>4. 今後の開発ポイント</h2>
+<div class="note">
+<ul>
+  <li><strong>バリデーション:</strong> <code>FormRequest</code> を作ってコントローラから切り出すと見通しが良い</li>
+  <li><strong>ステータス即保存:</strong> CSRFトークンを meta タグから取得し fetch の <code>X-CSRF-TOKEN</code> ヘッダに載せる</li>
+  <li><strong>検索:</strong> <code>when()</code> メソッドで条件付きクエリを組むとコードが簡潔になる</li>
+  <li><strong>日付の整合性:</strong> ステータスが「読了」なら finished_at 必須、など将来のルール追加候補</li>
+  <li><strong>Enumラベル活用:</strong> ビューでは <code>$book-&gt;status-&gt;label()</code> で日本語表示、プルダウンは <code>BookStatus::cases()</code> でループ</li>
+  <li><strong>発展案:</strong> Google Books / 楽天ブックス API連携で ISBN から書影・情報を自動取得</li>
+</ul>
+</div>
+
+<h2>5. 参考コマンド集</h2>
+<pre><code># コンテナ起動/停止
+sail up -d
+sail down
+
+# ポート占有プロセスの確認
+docker ps
+lsof -iTCP:80 -sTCP:LISTEN -n -P
+
+# マイグレーション・シーダー
+sail artisan migrate
+sail artisan migrate --seed
+sail artisan migrate:fresh --seed   # DBをリセットして再投入
+
+# 生成コマンド
+sail artisan make:model Book -mc --resource
+sail artisan make:seeder GenreSeeder</code></pre>
+
+</body>
+</html>
