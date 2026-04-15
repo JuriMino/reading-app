@@ -3,7 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\Book;
+use App\Models\Genre;
+use App\Enums\BookStatus;
+use App\Http\Requests\StoreBookRequest;
+use App\Http\Requests\UpdateBookRequest;
 use Illuminate\Http\Request;
+
 
 class BookController extends Controller
 {
@@ -12,7 +17,16 @@ class BookController extends Controller
      */
     public function index()
     {
-        //
+        // N+1問題対策: with('genre') を付けないと、ビューで $book->genre を
+        // 参照するたびに genres テーブルへのSELECTが発行される（本の数だけ）。
+        // with を付けると、使われている genre_id をまとめて WHERE IN で1回取得し、
+        // 各 book に紐付けてくれる（Eager Loading）。
+        $books = Book::with('genre')->orderBy('created_at', 'desc')->get();
+
+        return view('books.index', [
+            'books'  => $books,
+            'status' => BookStatus::cases(),
+        ]);
     }
 
     /**
@@ -20,15 +34,20 @@ class BookController extends Controller
      */
     public function create()
     {
-        //
+        return view('books.create', [
+            'genres'   => Genre::orderBy('id')->get(),
+            'statuses' => BookStatus::cases(),
+        ]);
     }
 
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(StoreBookRequest $request)
     {
-        //
+        Book::create($request->validated());
+
+        return redirect()->route('books.index');
     }
 
     /**
@@ -36,7 +55,12 @@ class BookController extends Controller
      */
     public function show(Book $book)
     {
-        //
+        $book->load('genre');
+
+        return view('books.show',[
+            'book'   => $book,
+            'status' => BookStatus::cases()
+        ]);
     }
 
     /**
@@ -44,15 +68,21 @@ class BookController extends Controller
      */
     public function edit(Book $book)
     {
-        //
+        return view('books.edit', [
+            'book'     => $book,
+            'genres'   => Genre::orderBy('id')->get(),
+            'statuses' => BookStatus::cases(),
+        ]);
     }
 
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, Book $book)
+    public function update(UpdateBookRequest $request, Book $book)
     {
-        //
+        Book::update($request->validated());
+
+        return redirect()->route('books.show', $book);
     }
 
     /**
@@ -60,6 +90,19 @@ class BookController extends Controller
      */
     public function destroy(Book $book)
     {
-        //
+        $book->delete();
+
+        return redirect()->route('books.index');
+    }
+
+    public function updateStatus(Request $request, Book $book)
+    {
+        $validated = $request->validate([
+            'status' => ['required', 'string'],
+        ]);
+
+        $book->update($validated);
+
+        return response()->json(['status' => $book->status->value]);
     }
 }

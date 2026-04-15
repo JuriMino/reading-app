@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>reading-record 開発記録 2026-04-16</title>
+<style>
+  body { font-family: "Hiragino Sans", "Yu Gothic", sans-serif; line-height: 1.7; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #333; }
+  h1 { border-bottom: 3px solid #4a90e2; padding-bottom: 8px; }
+  h2 { border-left: 5px solid #4a90e2; padding-left: 10px; margin-top: 32px; }
+  h3 { color: #4a90e2; margin-top: 24px; }
+  code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: Menlo, monospace; font-size: 0.9em; }
+  pre { background: #2d2d2d; color: #f8f8f2; padding: 14px; border-radius: 6px; overflow-x: auto; font-size: 0.9em; }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+  th { background: #f4f4f4; }
+  .note { background: #fff8e1; border-left: 4px solid #ffc107; padding: 10px 14px; margin: 12px 0; }
+  .tip { background: #e8f5e9; border-left: 4px solid #43a047; padding: 10px 14px; margin: 12px 0; }
+  ul, ol { padding-left: 22px; }
+</style>
+</head>
+<body>
+
+<h1>reading-record 開発記録</h1>
+<p><strong>日付:</strong> 2026-04-16</p>
+<p><strong>概要:</strong> マイグレーション実行、ルート定義、BookController実装、バリデーションのFormRequest切り出しまで完了。</p>
+
+<h2>1. 今日の作業手順</h2>
+
+<h3>1-1. マイグレーション＆シーダー実行</h3>
+<pre><code>sail up -d
+sail artisan migrate --seed</code></pre>
+<p>これで以下が作成された:</p>
+<ul>
+  <li>sessions テーブル（昨日のエラー解消）</li>
+  <li>genres テーブル＆マスタ投入</li>
+  <li>books テーブル</li>
+</ul>
+
+<h3>1-2. ルート定義</h3>
+<p><code>routes/web.php</code> を以下のようにグルーピングして記述:</p>
+<pre><code>Route::prefix('books')-&gt;name('books.')-&gt;controller(BookController::class)-&gt;group(function () {
+    Route::get('/',              'index')-&gt;name('index');
+    Route::get('/create',        'create')-&gt;name('create');
+    Route::post('/',             'store')-&gt;name('store');
+    Route::get('/{book}',        'show')-&gt;name('show');
+    Route::get('/{book}/edit',   'edit')-&gt;name('edit');
+    Route::put('/{book}',        'update')-&gt;name('update');
+    Route::delete('/{book}',     'destroy')-&gt;name('destroy');
+    Route::patch('/{book}/status', 'updateStatus')-&gt;name('updateStatus');
+});</code></pre>
+
+<h3>1-3. BookController 実装</h3>
+<p>index / create / store / show / edit / update / destroy / updateStatus を実装。</p>
+<ul>
+  <li>index: <code>with('genre')</code> + <code>created_at DESC</code></li>
+  <li>show / edit / update / destroy: ルートモデルバインディングで <code>Book $book</code></li>
+  <li>destroy: <code>$book-&gt;delete()</code> だけで論理削除（SoftDeletesトレイト）</li>
+  <li>updateStatus: ステータス即時更新用、JSONを返す</li>
+</ul>
+
+<h3>1-4. FormRequest に切り出し</h3>
+<pre><code>sail artisan make:request StoreBookRequest
+sail artisan make:request UpdateBookRequest</code></pre>
+<p><code>UpdateBookRequest extends StoreBookRequest</code> とすることで、同じルールを使い回す構成に。</p>
+
+<h2>2. 学びと判断ポイント</h2>
+
+<h3>2-1. ルートの順序に注意</h3>
+<p><code>books/create</code> は <code>books/{book}</code> より<strong>上</strong>に書く必要がある。そうしないと <code>create</code> が <code>{book}</code> にマッチしてしまう。</p>
+
+<h3>2-2. RESTfulの考え方</h3>
+<ul>
+  <li>URIは「リソース（モノ）」を表す</li>
+  <li>動作（CRUD）はHTTPメソッドで表現する（GET/POST/PUT/DELETE）</li>
+  <li>同じURI <code>/books</code> でも GET = 一覧、POST = 作成 というようにメソッドで振り分けられる</li>
+  <li>そのため <code>/books/store</code> のようにURIに動詞を入れる必要はない</li>
+</ul>
+<table>
+<tr><th>メソッド</th><th>URI</th><th>アクション</th><th>対象</th></tr>
+<tr><td>GET</td><td>/books</td><td>index</td><td>コレクション</td></tr>
+<tr><td>GET</td><td>/books/create</td><td>create</td><td>フォーム画面</td></tr>
+<tr><td>POST</td><td>/books</td><td>store</td><td>コレクション</td></tr>
+<tr><td>GET</td><td>/books/{book}</td><td>show</td><td>個別リソース</td></tr>
+<tr><td>GET</td><td>/books/{book}/edit</td><td>edit</td><td>フォーム画面</td></tr>
+<tr><td>PUT</td><td>/books/{book}</td><td>update</td><td>個別リソース</td></tr>
+<tr><td>DELETE</td><td>/books/{book}</td><td>destroy</td><td>個別リソース</td></tr>
+</table>
+
+<h3>2-3. ルートモデルバインディング</h3>
+<p><code>show(Book $book)</code> のように型指定すると、URIの <code>{book}</code> から自動で該当レコードを取得（<code>findOrFail</code>相当）。見つからなければ自動で404。</p>
+
+<h3>2-4. N+1問題と Eager Loading</h3>
+<div class="note">
+<strong>問題:</strong> 一覧で各bookのgenreを表示する時、<code>with</code> なしだと本の数だけSQLが発行される。<br>
+<strong>解決:</strong> <code>with('genre')</code> を付けると、使われている genre_id を <code>WHERE IN (...)</code> でまとめて1回で取得し、各bookに紐付けてくれる（Eager Loading）。<br>
+<strong>差:</strong> 本が10冊なら「11回のSQL → 2回のSQL」。
+</div>
+
+<h3>2-5. Enum の <code>cases()</code></h3>
+<p>PHP の Enum には <code>cases()</code> が自動で用意されており、定義した全ケースを配列で返す。ビューでプルダウン生成に使う。将来ステータスを増やしても、Enumに1行足すだけでビューに反映される。</p>
+
+<h3>2-6. <code>view()</code> の引数</h3>
+<ul>
+  <li>第1引数はビューファイルのパス（<code>resources/views/</code> 配下を <code>.</code> 区切り）。URLではない。</li>
+  <li>第2引数はビューに渡すデータ（連想配列）。キーがビュー内の変数名になる。</li>
+  <li>ビューは渡されたデータしか使えないので、必要な値は全てコントローラで渡す。</li>
+</ul>
+
+<h3>2-7. バリデーションの場所</h3>
+<table>
+<tr><th>パターン</th><th>特徴</th></tr>
+<tr><td>コントローラ直書き</td><td>シンプルだが、store/updateで重複しやすく肥大化</td></tr>
+<tr><td>FormRequest（採用）</td><td>責務分離・可読性・保守性・テスト容易性に優れる</td></tr>
+<tr><td>モデル内</td><td>Laravelでは非推奨。モデルは「データの状態」を担当する設計思想</td></tr>
+</table>
+<p><strong>実務主流の理由:</strong> 責務分離、可読性、保守性、テスト容易性、チーム規約としての予測可能性。</p>
+
+<h3>2-8. FormRequest の仕組み</h3>
+<ul>
+  <li>コントローラメソッドが呼ばれる<strong>前</strong>にLaravelが自動でバリデーション実行</li>
+  <li>失敗時は自動でリダイレクト＆エラーメッセージをセッション保存</li>
+  <li>コントローラは成功時の処理だけ書けばOK</li>
+  <li><code>$request-&gt;validated()</code> で検証通過後のデータのみ取得（余計なパラメータは除外される）</li>
+  <li><code>authorize()</code> で認可ロジックも統合可能</li>
+</ul>
+
+<h2>3. 明日以降のタスク</h2>
+<ol>
+  <li>ビュー作成（レイアウト／一覧／詳細／作成／編集）</li>
+  <li>ステータス即保存用JS（fetchでPATCH、CSRFトークンをヘッダに）</li>
+  <li>検索機能（タイトル・著者・出版社・ジャンル・ステータス）</li>
+  <li>ソート機能</li>
+  <li>削除確認UI（論理削除）</li>
+</ol>
+
+<h2>4. 今後の開発ポイント</h2>
+<div class="tip">
+<ul>
+  <li><strong>N+1対策の確認:</strong> 開発中は <code>DB::listen</code> で発行SQLをログ出力し、with ありなしで違いを体感してみる。</li>
+  <li><strong>ルート確認:</strong> <code>sail artisan route:list</code> で登録済みルートを一覧表示できる。</li>
+  <li><strong>Enumの活用:</strong> <code>$book-&gt;status-&gt;label()</code> で画面用日本語、<code>$book-&gt;status-&gt;value</code> でDB用文字列。</li>
+  <li><strong>バリデーション拡張:</strong> 「ステータスが読了なら finished_at 必須」など条件付きルールは <code>Rule::requiredIf</code> などで追加可能。</li>
+  <li><strong>CSRF対策:</strong> ステータス即保存の fetch 実装時、<code>&lt;meta name="csrf-token"&gt;</code> をレイアウトに仕込み、JS側で <code>X-CSRF-TOKEN</code> ヘッダに載せる。</li>
+</ul>
+</div>
+
+<h2>5. 参考コマンド集</h2>
+<pre><code># マイグレーション
+sail artisan migrate --seed
+sail artisan migrate:fresh --seed
+
+# 生成
+sail artisan make:request StoreBookRequest
+sail artisan make:request UpdateBookRequest
+
+# ルート確認
+sail artisan route:list</code></pre>
+
+</body>
+</html>
