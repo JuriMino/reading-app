@@ -8,6 +8,7 @@ use App\Enums\BookStatus;
 use App\Http\Requests\StoreBookRequest;
 use App\Http\Requests\UpdateBookRequest;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 
 class BookController extends Controller
@@ -25,7 +26,7 @@ class BookController extends Controller
 
         return view('books.index', [
             'books'  => $books,
-            'status' => BookStatus::cases(),
+            'statuses' => BookStatus::cases(),
         ]);
     }
 
@@ -59,7 +60,7 @@ class BookController extends Controller
 
         return view('books.show',[
             'book'   => $book,
-            'status' => BookStatus::cases()
+            'statuses' => BookStatus::cases()
         ]);
     }
 
@@ -80,7 +81,7 @@ class BookController extends Controller
      */
     public function update(UpdateBookRequest $request, Book $book)
     {
-        Book::update($request->validated());
+        $book->update($request->validated());
 
         return redirect()->route('books.show', $book);
     }
@@ -98,7 +99,7 @@ class BookController extends Controller
     public function updateStatus(Request $request, Book $book)
     {
         $validated = $request->validate([
-            'status' => ['required', 'string'],
+            'status' => ['required', Rule::enum(BookStatus::class)],
         ]);
 
         $book->update($validated);

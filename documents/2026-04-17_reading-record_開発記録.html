@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>reading-record 開発記録 2026-04-17</title>
+<style>
+  body { font-family: "Hiragino Sans", "Yu Gothic", sans-serif; line-height: 1.7; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #333; }
+  h1 { border-bottom: 3px solid #4a90e2; padding-bottom: 8px; }
+  h2 { border-left: 5px solid #4a90e2; padding-left: 10px; margin-top: 32px; }
+  h3 { color: #4a90e2; margin-top: 24px; }
+  h4 { color: #555; margin-top: 18px; }
+  code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: Menlo, monospace; font-size: 0.9em; }
+  pre { background: #2d2d2d; color: #f8f8f2; padding: 14px; border-radius: 6px; overflow-x: auto; font-size: 0.9em; }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; }
+  .error { background: #ffebee; border-left: 4px solid #e53935; padding: 10px 14px; margin: 12px 0; }
+  .tip { background: #e8f5e9; border-left: 4px solid #43a047; padding: 10px 14px; margin: 12px 0; }
+  .note { background: #fff8e1; border-left: 4px solid #ffc107; padding: 10px 14px; margin: 12px 0; }
+  ul, ol { padding-left: 22px; }
+</style>
+</head>
+<body>
+
+<h1>reading-record 開発記録</h1>
+<p><strong>日付:</strong> 2026-04-17</p>
+<p><strong>概要:</strong> ビュー作成を実施。共通レイアウト、一覧、詳細、作成・編集フォーム、フォーム部品（パーシャル）までを構築。CSSはTailwind CSS v4 を使用。書籍登録・更新・削除が動作する状態に到達。</p>
+
+<h2>1. 今日の作業手順</h2>
+
+<h3>1-1. Tailwind CSS の準備</h3>
+<p>プロジェクトに既にTailwind v4 がセットアップ済みだったため、別ターミナルで Vite 開発サーバーを起動:</p>
+<pre><code>sail npm install
+sail npm run dev</code></pre>
+
+<h3>1-2. 共通レイアウト</h3>
+<p><code>resources/views/layouts/app.blade.php</code> を作成。ヘッダ・メイン部・CSRFメタタグ・Viteアセット読み込みを含む。子ビューで <code>@yield('title')</code> と <code>@yield('content')</code> を差し込む構成。</p>
+
+<h3>1-3. 一覧画面</h3>
+<p><code>books/index.blade.php</code> を作成。テーブル表示、各行にタイトルへのリンク、ステータスのプルダウン（即保存は後日）、編集・削除ボタン。</p>
+
+<h3>1-4. 詳細画面</h3>
+<p><code>books/show.blade.php</code> を作成。書籍情報、要約、感想をセクション分けして表示。ステータスは詳細でもプルダウン。</p>
+
+<h3>1-5. 作成・編集フォーム</h3>
+<p>入力項目が共通なので<strong>パーシャル</strong>（<code>_form.blade.php</code>）に切り出し、<code>create.blade.php</code> と <code>edit.blade.php</code> から <code>@include('books._form', [...])</code> で読み込む構成に。</p>
+
+<h2>2. 発見したエラーと原因・対応</h2>
+
+<h3>2-1. Route [book.index] not defined</h3>
+<div class="error">
+<strong>原因:</strong> <code>routes/web.php</code> のリダイレクトで <code>route('book.index')</code>（単数形）と記述。ルート名は複数形 <code>books.index</code> で定義していた。
+</div>
+<p><strong>対応:</strong> <code>'book.index'</code> → <code>'books.index'</code> に修正。</p>
+
+<h3>2-2. Route [books.index] not defined</h3>
+<div class="error">
+<strong>原因:</strong> ルートグループ名の指定 <code>name('books')</code> の末尾に<strong>ドットが無かった</strong>。結果、<code>name('books')</code> + <code>name('index')</code> が連結されて <code>booksindex</code> というルート名になっていた。
+</div>
+<p><strong>対応:</strong> <code>name('books.')</code>（末尾ドット付き）に修正。<br>
+<strong>ポイント:</strong> グルーピング時のプレフィックス連結には、ドットは自動で付与されないので明示する必要がある。</p>
+
+<h3>2-3. Undefined constant "books"</h3>
+<div class="error">
+<strong>原因:</strong> Bladeで <code>{{ route(books.store) }}</code> のように、ルート名をクォートせず記述。PHPが <code>books</code> を定数として解釈しようとして失敗。
+</div>
+<p><strong>対応:</strong> <code>{{ route('books.store') }}</code> とクォートで囲む。文字列リテラルは必ずクォートが必要。</p>
+
+<h3>2-4. @include のデータ渡しで配列キーを変数として書いてしまった</h3>
+<div class="error">
+<strong>原因:</strong> <code>@include('books._form', [$book =&gt; null])</code> と記述。配列キーが変数になっている。
+</div>
+<p><strong>対応:</strong> <code>['book' =&gt; null]</code> と文字列でキー指定。</p>
+
+<h3>2-5. Attempt to read property "genre_id" on null</h3>
+<div class="error">
+<strong>原因:</strong> <code>_form.blade.php</code> で <code>$book-&gt;genre_id</code> と書いていた。create時は <code>$book</code> が null のためエラー。
+</div>
+<p><strong>対応:</strong> Null安全演算子 <code>$book?-&gt;genre_id</code> を使う。</p>
+
+<h3>2-6. Undefined variable $genre_id</h3>
+<div class="error">
+<strong>原因:</strong> <code>@foreach ($genres as $genre)</code> の中で、選択比較に <code>$genre_id</code> と書いてしまった。正しくはループ変数の <code>$genre-&gt;id</code>。
+</div>
+<p><strong>対応:</strong> <code>@selected(old('genre_id', $book?-&gt;genre_id) == $genre-&gt;id)</code> に修正。比較は <code>==</code>（緩い等価）にして型違いを吸収。</p>
+
+<h3>2-7. Field 'author' doesn't have a default value (MySQL)</h3>
+<div class="error">
+<strong>原因:</strong> <code>Book</code> モデルの <code>$fillable</code> に <strong>typo</strong> があり、<code>'autohr'</code> と記述されていた。結果、リクエストに author が含まれていても Mass Assignment で除外されてSQLに含まれず、NOT NULL制約でエラー。
+</div>
+<p><strong>対応:</strong> <code>'autohr'</code> → <code>'author'</code> に修正。<br>
+<strong>教訓:</strong> <code>$fillable</code> のtypoは、バリデーション通過後でも黙って無視されるため気づきにくい。モデル編集後は実際に登録まで動作確認。</p>
+
+<h3>2-8. Undefined variable $statuses</h3>
+<div class="error">
+<strong>原因:</strong> BookController の <code>index</code> と <code>show</code> で、ビューに渡すキーが <code>'status'</code>（単数）になっていた。ビュー側は <code>$statuses</code>（複数）を期待。
+</div>
+<p><strong>対応:</strong> コントローラ側を <code>'statuses' =&gt; BookStatus::cases()</code> に統一。</p>
+
+<h3>2-9. POST method is not supported for route books/{id}</h3>
+<div class="error">
+<strong>原因:</strong> 編集フォームに <code>@method('PUT')</code> が無く、POSTで送信されていた。ルートは PUT/DELETE のみ受付。
+</div>
+<p><strong>対応:</strong> <code>edit.blade.php</code> のフォーム内に <code>@method('PUT')</code> を追加。修正後も症状が残ったのはビューキャッシュが原因で、<code>sail artisan view:clear</code> + ブラウザのスーパーリロードで解決。</p>
+<div class="tip">
+<strong>Tip:</strong> HTMLフォームはGET/POSTしか送れない。PUT/PATCH/DELETEは <code>@method('PUT')</code> 等で hidden input の <code>_method</code> を出力してLaravelに解釈させる。
+</div>
+
+<h3>2-10. update メソッド内の静的呼び出し誤り</h3>
+<div class="error">
+<strong>原因:</strong> <code>Book::update($request-&gt;validated())</code> と記述。静的呼び出しだと対象レコードが曖昧になる。
+</div>
+<p><strong>対応:</strong> <code>$book-&gt;update($request-&gt;validated())</code> に修正。ルートモデルバインディングで取得したインスタンスのメソッドを呼ぶ。</p>
+
+<h3>2-11. 詳細画面の削除フォームの route() で引数不足</h3>
+<div class="error">
+<strong>原因:</strong> <code>route('books.destroy')</code> と書いていた（<code>$book</code> 引数なし）。
+</div>
+<p><strong>対応:</strong> <code>route('books.destroy', $book)</code> に修正。</p>
+
+<h3>2-12. 詳細画面の編集・削除ボタンのCSS崩れ</h3>
+<div class="error">
+<strong>原因:</strong> 複合的な崩れ。
+<ul>
+  <li>外側コンテナが <code>fex gap-2</code>（Tailwindに存在しないクラス）で flex が効かず縦並びに</li>
+  <li>編集ボタンが <code>bg-gray-600</code> + <code>text-gray-700</code> でコントラスト不足で読みにくい</li>
+  <li>タイトルが長いとボタン側が Flexbox のデフォルト挙動で縮められ「編／集」のように縦書きに</li>
+</ul>
+</div>
+<p><strong>対応:</strong></p>
+<ul>
+  <li><code>fex</code> → <code>flex</code> に修正</li>
+  <li>ボタン色を <code>bg-gray-100</code> + <code>text-gray-700</code> に変更</li>
+  <li>ボタンに <code>whitespace-nowrap</code>、ボタン群に <code>shrink-0</code>、タイトル側に <code>min-w-0 flex-1</code> と <code>break-words</code> を付与</li>
+</ul>
+
+<h2>3. 今日得た知見（まとめ）</h2>
+
+<h3>3-1. Blade の共通パターン</h3>
+<table>
+<tr><th>書き方</th><th>意味</th></tr>
+<tr><td><code>@extends('layouts.app')</code></td><td>共通レイアウトを継承</td></tr>
+<tr><td><code>@section('xxx') ... @endsection</code></td><td>レイアウトの <code>@yield('xxx')</code> に差し込む</td></tr>
+<tr><td><code>@include('books._form', [...])</code></td><td>パーシャル読み込み。先頭 <code>_</code> はパーシャル慣習</td></tr>
+<tr><td><code>@csrf</code></td><td>CSRFトークンhidden input</td></tr>
+<tr><td><code>@method('PUT')</code></td><td>PUT/DELETE偽装用hidden input</td></tr>
+<tr><td><code>@selected($条件)</code></td><td>条件trueなら selected 属性を出力</td></tr>
+<tr><td><code>old('key', $default)</code></td><td>バリデーション失敗後のフォーム再表示用</td></tr>
+<tr><td><code>$book?-&gt;title</code></td><td>Null安全演算子。nullでもエラーにならない</td></tr>
+</table>
+
+<h3>3-2. Tailwind の色の濃淡</h3>
+<ul>
+  <li>50 = 一番薄い（背景のうっすら色）</li>
+  <li>100〜300 = 薄め（ボタン背景など）</li>
+  <li>500 = 中間</li>
+  <li>600〜800 = 濃い（文字色など）</li>
+  <li>900 = 一番濃い</li>
+</ul>
+<p>背景と文字は濃淡を逆に組み合わせる（例: <code>bg-gray-100</code> + <code>text-gray-700</code>）のが視認性の基本。</p>
+
+<h3>3-3. Flexbox の挙動とボタン潰れ</h3>
+<ul>
+  <li>Flex子要素はデフォルトで<strong>自動的に縮められる</strong></li>
+  <li>縮めたくない要素は <code>shrink-0</code></li>
+  <li>テキストを改行させたくないなら <code>whitespace-nowrap</code></li>
+  <li>長文側は <code>min-w-0 flex-1</code> + <code>break-words</code> で適切に折り返す</li>
+</ul>
+
+<h3>3-4. typo と関連エラーのパターン</h3>
+<div class="note">
+<ul>
+  <li><strong>ルート名ドット抜け:</strong> <code>name('books')</code> → ルート名が連結されて意図と違うものに</li>
+  <li><strong>$fillable typo:</strong> リクエストに値があっても Mass Assignment で黙って除外される → SQLエラー</li>
+  <li><strong>ルート名クォート忘れ:</strong> 「Undefined constant」エラー</li>
+  <li><strong>変数名の単複混在:</strong> コントローラとビューでキー名が不一致</li>
+</ul>
+</div>
+
+<h2>4. 明日以降のタスク</h2>
+<ol>
+  <li>ステータス即保存用 JS（fetch + CSRF）</li>
+  <li>検索機能（タイトル・著者・出版社・ジャンル・ステータス）</li>
+  <li>ソート機能</li>
+  <li><code>Rule::enum(BookStatus::class)</code> で updateStatus のバリデーションを堅牢化</li>
+  <li>FormRequest の messages() のキーを <code>'属性.ルール名'</code> 形式に修正（現状はカスタムメッセージが効いていない）</li>
+  <li>StoreBookRequest の <code>'finised_at'</code> typo 修正</li>
+</ol>
+
+<h2>5. 参考コマンド集</h2>
+<pre><code># Vite 開発サーバー
+sail npm run dev
+
+# ビューキャッシュクリア（Bladeの変更が反映されない時）
+sail artisan view:clear
+
+# ルート確認
+sail artisan route:list
+
+# ブラウザのスーパーリロード（CSS/JSが古い時）
+#   Mac: Cmd + Shift + R</code></pre>
+
+</body>
+</html>

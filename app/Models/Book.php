@@ -12,7 +12,7 @@ class Book extends Model
     use SoftDeletes;
     protected $fillable = [
         'title',
-        'autohr',
+        'author',
         'publisher',
         'genre_id',
         'started_at',

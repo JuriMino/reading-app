@@ -3,9 +3,9 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\BookController;
 
-Route::get('/', fn()=>redirect()->route('book.index'));
+Route::get('/', fn()=>redirect()->route('books.index'));
 
-Route::prefix('books')->name('books')->controller(BookController::class)->group(function(){
+Route::prefix('books')->name('books.')->controller(BookController::class)->group(function(){
     Route::get('/', 'index')->name('index');
     Route::get('/create', 'create')->name('create');
     Route::post('/', 'store')->name('store');
