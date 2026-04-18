@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ソート機能の実装 - 2026-04-18</title>
+<style>
+  body { font-family: "Hiragino Sans", "Yu Gothic", sans-serif; line-height: 1.7; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #333; }
+  h1 { border-bottom: 3px solid #4a90e2; padding-bottom: 8px; }
+  h2 { border-left: 5px solid #4a90e2; padding-left: 10px; margin-top: 32px; }
+  h3 { color: #4a90e2; margin-top: 24px; }
+  h4 { color: #555; margin-top: 18px; }
+  code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: Menlo, monospace; font-size: 0.9em; }
+  pre { background: #2d2d2d; color: #f8f8f2; padding: 14px; border-radius: 6px; overflow-x: auto; font-size: 0.9em; }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; }
+  .error { background: #ffebee; border-left: 4px solid #e53935; padding: 10px 14px; margin: 12px 0; }
+  .tip { background: #e8f5e9; border-left: 4px solid #43a047; padding: 10px 14px; margin: 12px 0; }
+  .note { background: #fff8e1; border-left: 4px solid #ffc107; padding: 10px 14px; margin: 12px 0; }
+  ul, ol { padding-left: 22px; }
+  a { color: #4a90e2; }
+  .nav { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px 16px; margin: 20px 0; font-size: 0.9em; }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <a href="2026-04-18_reading-record_index.html">← 目次</a> |
+  前: <a href="2026-04-18_reading-record_02_js.html">JSの解説</a> |
+  次: <a href="2026-04-18_reading-record_04_summary.html">全体まとめ</a>
+</div>
+
+<h1>ソート機能の実装</h1>
+<p><strong>やること:</strong> 一覧画面にソート用のセレクトボックスを置き、登録日／タイトル／著者／読了日 × 昇順／降順で並び替えできるようにする。検索条件との併用も可能に。</p>
+
+<h2>1. 設計方針</h2>
+<ul>
+  <li><strong>UI</strong>：セレクトボックス1つで「登録日が新しい順」「タイトル昇順」などを並べる</li>
+  <li><strong>変更時挙動</strong>：プルダウンを変えた瞬間にフォームsubmit（<code>onchange="this.form.submit()"</code>）</li>
+  <li><strong>デフォルト</strong>：登録日が新しい順（<code>created_at DESC</code>）</li>
+  <li><strong>セキュリティ</strong>：ホワイトリスト方式（許可したソート種別のみ受け付ける）</li>
+  <li><strong>検索との組み合わせ</strong>：検索フォーム内にソートセレクトも置き、同じGETパラメータとして送る</li>
+</ul>
+
+<h2>2. コード</h2>
+
+<h3>2-1. BookController@index にソート処理を追加</h3>
+<p>検索処理の後、<code>$books = ...</code> の直前に挿入。</p>
+<pre><code>// 許可するソートオプション（キー: 表示用識別子、値: [カラム, 昇降]）
+$sortOptions = [
+    'created_at_desc'  =&gt; ['created_at', 'desc'],
+    'created_at_asc'   =&gt; ['created_at', 'asc'],
+    'title_asc'        =&gt; ['title', 'asc'],
+    'title_desc'       =&gt; ['title', 'desc'],
+    'author_asc'       =&gt; ['author', 'asc'],
+    'author_desc'      =&gt; ['author', 'desc'],
+    'finished_at_desc' =&gt; ['finished_at', 'desc'],
+    'finished_at_asc'  =&gt; ['finished_at', 'asc'],
+];
+
+// リクエストから受け取り、許可リストになければデフォルト
+$sort = $request-&gt;input('sort', 'created_at_desc');
+[$column, $direction] = $sortOptions[$sort] ?? $sortOptions['created_at_desc'];
+
+$books = $query-&gt;orderBy($column, $direction)-&gt;get();</code></pre>
+
+<p><code>return view(...)</code> の <code>$filters</code> には <code>sort</code> も含める：</p>
+<pre><code>'filters' =&gt; $request-&gt;only(['keyword', 'genre_id', 'status', 'sort']),</code></pre>
+
+<h3>2-2. 検索フォーム内にソートセレクトを追加</h3>
+<p><code>index.blade.php</code> の検索フォーム（既存の <code>&lt;div class="grid grid-cols-12 ...&gt;</code>）の下に1行追加。</p>
+<pre><code>&lt;form action="{{ route('books.index') }}" method="get" class="..."&gt;
+    {{-- 既存の検索行 --}}
+    &lt;div class="grid grid-cols-12 gap-3 items-end"&gt;...&lt;/div&gt;
+
+    {{-- ソート行を追加 --}}
+    &lt;div class="mt-3 flex items-center justify-end gap-2"&gt;
+        &lt;label class="text-xs text-gray-500"&gt;並び替え&lt;/label&gt;
+        &lt;select name="sort" onchange="this.form.submit()"
+                class="border border-gray-300 rounded-md px-3 py-2 text-sm"&gt;
+            &lt;option value="created_at_desc"  @selected(($filters['sort'] ?? 'created_at_desc') === 'created_at_desc')&gt;登録日が新しい順&lt;/option&gt;
+            &lt;option value="created_at_asc"   @selected(($filters['sort'] ?? '') === 'created_at_asc')&gt;登録日が古い順&lt;/option&gt;
+            &lt;option value="title_asc"        @selected(($filters['sort'] ?? '') === 'title_asc')&gt;タイトル昇順&lt;/option&gt;
+            &lt;option value="title_desc"       @selected(($filters['sort'] ?? '') === 'title_desc')&gt;タイトル降順&lt;/option&gt;
+            &lt;option value="author_asc"       @selected(($filters['sort'] ?? '') === 'author_asc')&gt;著者昇順&lt;/option&gt;
+            &lt;option value="author_desc"      @selected(($filters['sort'] ?? '') === 'author_desc')&gt;著者降順&lt;/option&gt;
+            &lt;option value="finished_at_desc" @selected(($filters['sort'] ?? '') === 'finished_at_desc')&gt;読了日が新しい順&lt;/option&gt;
+            &lt;option value="finished_at_asc"  @selected(($filters['sort'] ?? '') === 'finished_at_asc')&gt;読了日が古い順&lt;/option&gt;
+        &lt;/select&gt;
+    &lt;/div&gt;
+&lt;/form&gt;</code></pre>
+
+<h2>3. ポイント解説</h2>
+
+<h3>3-1. ホワイトリスト方式の重要性</h3>
+<p>仮にリクエストを無検証で <code>orderBy($request-&gt;sort_column, $request-&gt;sort_direction)</code> のように使うと、ユーザーがURLを書き換えて <code>?sort_column=password</code> のようなおかしなカラム名を渡せてしまう。最悪の場合、DB構造を探るきっかけになる。</p>
+<p>今回のように「このキーのとき、このカラムをこの向きで」という対応表を<strong>サーバー側で固定</strong>すれば、想定外の値はすべて無視され安全。</p>
+
+<h3>3-2. <code>onchange="this.form.submit()"</code> のUX</h3>
+<p>プルダウン変更時に自動でフォームsubmitするインラインJS。ユーザーは「検索」ボタンを押さずに即ソートできる。<br>
+検索テキストやステータスは明示的に「検索」ボタンで確定したいが、並び順は「変えたら即反映」のほうが直感的というケース。</p>
+
+<h3>3-3. 配列分割代入</h3>
+<pre><code>[$column, $direction] = ['created_at', 'desc'];
+// $column === 'created_at', $direction === 'desc'</code></pre>
+<p>PHP 7.1+ で利用可能。連想配列に対しても <code>['a' =&gt; $x, 'b' =&gt; $y] = $array;</code> の形で使える。</p>
+
+<h3>3-4. <code>??</code> 演算子によるフォールバック</h3>
+<pre><code>$sortOptions[$sort] ?? $sortOptions['created_at_desc']</code></pre>
+<p>左辺が null（またはキーが存在しない）のときに右辺を返す。「許可外のソートキーが来たらデフォルトに戻す」という保険。</p>
+
+<h3>3-5. デフォルト状態でもデフォルト選択肢がハイライトされる仕組み</h3>
+<p>初回アクセス時は <code>$filters['sort']</code> が存在しない。そのままだと「登録日が新しい順」が選択状態にならない。<br>
+<code>@selected(($filters['sort'] ?? 'created_at_desc') === 'created_at_desc')</code> の <code>?? 'created_at_desc'</code> がその救済。「未指定ならデフォルト値として扱う」ことで選択状態を復元している。</p>
+
+<h2>4. 検索機能との組み合わせ</h2>
+<p>ソートを検索フォームの内側に置いたことで、以下の挙動が自然に得られる：</p>
+<ul>
+  <li>検索条件とソートが1つのGET URLに乗る（<code>?keyword=Laravel&amp;sort=title_asc</code>）</li>
+  <li>検索中にソートを変えても検索条件は維持される</li>
+  <li>ブックマーク時も並び順込みで保存できる</li>
+  <li>「クリア」ボタンで検索条件とソート両方が初期化される</li>
+</ul>
+
+<h2>5. 動作確認</h2>
+<ol>
+  <li>ソートプルダウンを変更 → 自動で画面再読み込みされ並び替わる</li>
+  <li>URLが <code>?sort=title_asc</code> のように更新される</li>
+  <li>検索条件を入れたままソート変更 → 両方適用される</li>
+  <li>「クリア」で初期状態（登録日が新しい順）に戻る</li>
+</ol>
+
+<h2>6. 補足：表示との整合性</h2>
+<p>デフォルトが「登録日が新しい順」なのに、一覧テーブルに登録日列がないと利用者にとって不自然。<br>
+併せて <code>index.blade.php</code> のテーブルに <code>登録日</code> 列を追加した（詳細は<a href="2026-04-18_reading-record_04_summary.html">まとめ</a>の UI 調整を参照）。</p>
+
+<div class="nav">
+  <a href="2026-04-18_reading-record_index.html">← 目次</a> |
+  前: <a href="2026-04-18_reading-record_02_js.html">JSの解説</a> |
+  次: <a href="2026-04-18_reading-record_04_summary.html">全体まとめ</a>
+</div>
+
+</body>
+</html>

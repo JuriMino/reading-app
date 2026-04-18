@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>UI調整・バリデーション修正・全体まとめ - 2026-04-18</title>
+<style>
+  body { font-family: "Hiragino Sans", "Yu Gothic", sans-serif; line-height: 1.7; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #333; }
+  h1 { border-bottom: 3px solid #4a90e2; padding-bottom: 8px; }
+  h2 { border-left: 5px solid #4a90e2; padding-left: 10px; margin-top: 32px; }
+  h3 { color: #4a90e2; margin-top: 24px; }
+  h4 { color: #555; margin-top: 18px; }
+  code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: Menlo, monospace; font-size: 0.9em; }
+  pre { background: #2d2d2d; color: #f8f8f2; padding: 14px; border-radius: 6px; overflow-x: auto; font-size: 0.9em; }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; }
+  .error { background: #ffebee; border-left: 4px solid #e53935; padding: 10px 14px; margin: 12px 0; }
+  .tip { background: #e8f5e9; border-left: 4px solid #43a047; padding: 10px 14px; margin: 12px 0; }
+  .note { background: #fff8e1; border-left: 4px solid #ffc107; padding: 10px 14px; margin: 12px 0; }
+  ul, ol { padding-left: 22px; }
+  a { color: #4a90e2; }
+  .nav { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px 16px; margin: 20px 0; font-size: 0.9em; }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <a href="2026-04-18_reading-record_index.html">← 目次</a> |
+  前: <a href="2026-04-18_reading-record_03_sort.html">ソート機能の実装</a>
+</div>
+
+<h1>UI調整・バリデーション修正・全体まとめ</h1>
+
+<h2>1. UI調整</h2>
+
+<h3>1-1. 一覧テーブルに「登録日」列を追加</h3>
+<p>デフォルトソートが「登録日が新しい順」なのに列自体が表示されていないのは不自然なため追加。</p>
+<p><code>resources/views/books/index.blade.php</code> の <code>&lt;thead&gt;</code> と <code>&lt;tbody&gt;</code> 両方に1列追加（読了日とステータスの間）。</p>
+<pre><code>&lt;th class="px-4 py-3 text-left"&gt;読了日&lt;/th&gt;
+&lt;th class="px-4 py-3 text-left"&gt;登録日&lt;/th&gt;
+&lt;th class="px-4 py-3 text-left"&gt;ステータス&lt;/th&gt;</code></pre>
+<pre><code>&lt;td class="px-4 py-3"&gt;{{ $book-&gt;finished_at?-&gt;format('Y-m-d') }}&lt;/td&gt;
+&lt;td class="px-4 py-3"&gt;{{ $book-&gt;created_at-&gt;format('Y-m-d') }}&lt;/td&gt;
+&lt;td class="px-4 py-3"&gt;...&lt;/td&gt;</code></pre>
+<div class="tip">
+<code>created_at</code>・<code>updated_at</code> は Eloquent のタイムスタンプとして自動で必ず値が入るため、<code>?-&gt;</code>（null安全演算子）は不要。
+</div>
+
+<h3>1-2. レイアウトの最大幅を拡張</h3>
+<p><code>resources/views/layouts/app.blade.php</code> で、テーブルの列が増えて詰まってきたため幅を拡張。</p>
+<pre><code>&lt;!-- Before --&gt;
+&lt;div class="max-w-5xl mx-auto px-4 py-4 ..."&gt;
+&lt;main class="max-w-5xl mx-auto px-4 py-8"&gt;
+
+&lt;!-- After --&gt;
+&lt;div class="max-w-7xl mx-auto px-4 py-4 ..."&gt;
+&lt;main class="max-w-7xl mx-auto px-4 py-8"&gt;</code></pre>
+
+<table>
+<tr><th>クラス</th><th>幅</th></tr>
+<tr><td><code>max-w-5xl</code></td><td>1024px（変更前）</td></tr>
+<tr><td><code>max-w-6xl</code></td><td>1152px</td></tr>
+<tr><td><code>max-w-7xl</code></td><td>1280px（変更後）</td></tr>
+<tr><td><code>max-w-full</code></td><td>100%（画面いっぱい）</td></tr>
+</table>
+
+<h3>1-3. 「新規登録」ボタンをヘッダーから本文へ移動</h3>
+<p>ヘッダーのグローバルナビゲーション感を抑え、一覧画面の検索フォーム下に「+ 新規登録」ボタンを配置。</p>
+<p><strong>ヘッダー側（削除）:</strong></p>
+<pre><code>&lt;nav&gt;
+    &lt;a href="{{ route('books.create') }}" class="..."&gt;新規登録&lt;/a&gt;
+&lt;/nav&gt;</code></pre>
+<p><strong>一覧画面側（追加）:</strong> 検索フォームの <code>&lt;/form&gt;</code> 直後に配置。</p>
+<pre><code>&lt;div class="flex justify-end mb-4"&gt;
+    &lt;a href="{{ route('books.create') }}"
+       class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium"&gt;
+        + 新規登録
+    &lt;/a&gt;
+&lt;/div&gt;</code></pre>
+<p>ヘッダーが空になるので <code>flex items-center justify-between</code> も不要になり、ロゴだけのシンプルな構造に。</p>
+
+<h2>2. StoreBookRequest のバリデーション修正</h2>
+
+<h3>2-1. <code>finised_at</code> タイポ修正</h3>
+<p>ルール定義側のキーが <code>finised_at</code> になっていて、<code>finished_at</code> のバリデーションが実質効いていなかった。</p>
+<pre><code>// Before
+'finised_at' =&gt; ['nullable', 'date', 'after_or_equal:started_at'],
+
+// After
+'finished_at' =&gt; ['nullable', 'date', 'after_or_equal:started_at'],</code></pre>
+<p>これにより「読了日は読書開始日以降」のチェックが実際に働くようになった。</p>
+
+<h3>2-2. <code>messages()</code> のキーを <code>attribute.rule</code> 形式に</h3>
+<p>Laravel のカスタムメッセージは <code>フィールド名.ルール名</code> 形式でキー指定する必要がある。</p>
+<pre><code>// Before（効かない）
+public function messages()
+{
+    return [
+        'title'    =&gt; 'タイトルは必須です',
+        'author'   =&gt; '著者は必須です',
+        'genre_id' =&gt; 'ジャンルを選択してください',
+        ...
+    ];
+}
+
+// After（効く）
+public function messages()
+{
+    return [
+        'title.required'    =&gt; 'タイトルは必須です',
+        'author.required'   =&gt; '著者は必須です',
+        'genre_id.required' =&gt; 'ジャンルを選択してください',
+        'status.required'   =&gt; 'ステータスを選択してください',
+        'finished_at.after_or_equal' =&gt; '読了日は読書開始日以降にしてください',
+    ];
+}</code></pre>
+<div class="tip">
+<strong>考え方:</strong> 1つのフィールドに複数のルール（required・string・max など）が適用されるため、「どのフィールドの、どのルールのときのメッセージか」を一意に指定する必要がある。
+</div>
+
+<h2>3. 今日の学び・注意点まとめ</h2>
+
+<h3>3-1. フォーム関連</h3>
+<ul>
+  <li>HTMLフォームは <code>name</code> 属性がない要素は送信されない。</li>
+  <li>Blade の <code>@selected(...)</code> は属性内（<code>&gt;</code> の前）に置く。<code>value</code> の閉じクォート位置に注意。</li>
+  <li>検索は GET、ブックマーク・共有が重要ならなおさら。</li>
+  <li>検索後の入力値復元は <code>$request-&gt;only([...])</code> で <code>$filters</code> を渡すパターンが定番。</li>
+</ul>
+
+<h3>3-2. SQL／Eloquent</h3>
+<ul>
+  <li><code>OR</code> 条件を混ぜるときはクロージャで <code>where(function($q) use (...) { ... })</code> でグルーピング。<code>AND</code> は <code>OR</code> より優先度が高い。</li>
+  <li><code>orderBy</code> のカラム名は<strong>必ずホワイトリスト</strong>に通す。ユーザー入力を直接渡すと危険。</li>
+  <li><code>$request-&gt;filled()</code>：存在＋非空をまとめて判定。<code>has()</code>・<code>isset()</code> は空文字を拾うので注意。</li>
+</ul>
+
+<h3>3-3. PHP / Laravel</h3>
+<ul>
+  <li>ダブルクォート文字列での変数展開は <code>"...{$変数名}..."</code>（<code>{var}</code> はただの文字列、<code>$</code> が必須）。</li>
+  <li>PHP 7.1+ の配列分割代入 <code>[$a, $b] = [...]</code> は2値のペアに便利。</li>
+  <li><code>??</code> 演算子は null/未定義時のフォールバックに。</li>
+  <li>FormRequest の <code>messages()</code> は <code>attribute.rule</code> 形式。</li>
+</ul>
+
+<h3>3-4. JavaScript</h3>
+<ul>
+  <li><code>data-*</code> 属性は <code>element.dataset.camelCaseName</code> で参照（ハイフン区切り → キャメルケース）。</li>
+  <li><code>&lt;select&gt;</code> や <code>&lt;input&gt;</code> の値は <code>element.value</code>。</li>
+  <li><code>classList.add/remove</code> の引数は<strong>1つ1クラス名</strong>。スペース区切り文字列は不可。</li>
+  <li>JSから Laravel にPOST/PUT/PATCH/DELETE する場合、<code>X-CSRF-TOKEN</code> ヘッダに <code>meta</code> タグのトークンをセット。</li>
+  <li>Vite を使う場合は開発中 <code>sail npm run dev</code> を起動しっぱなしにする。</li>
+</ul>
+
+<h3>3-5. Enum の設計</h3>
+<ul>
+  <li>表示用ラベルやスタイル情報は Enum にメソッドとして持たせるとビューがすっきりする（<code>label()</code>・<code>badgeClass()</code>）。</li>
+  <li>API応答にも同じメソッドを流用すれば、サーバー／クライアント間で表示ロジックが重複しない。</li>
+</ul>
+
+<h2>4. 今日のアプリ到達点</h2>
+<ul>
+  <li>書籍CRUD（登録・一覧・詳細・編集・論理削除）</li>
+  <li>ステータス変更の即時保存（リロードなし）</li>
+  <li>バッジ風UIで状態が視覚的にわかる</li>
+  <li>キーワード・ジャンル・ステータスでの絞り込み検索</li>
+  <li>4項目 × 昇降順の並び替え（検索条件と共存）</li>
+  <li>サーバーサイドバリデーション（カスタムメッセージ付き）</li>
+</ul>
+<p>読書記録アプリとしての主要機能は一通り揃った状態。</p>
+
+<h2>5. 今後に向けたアイデア（任意）</h2>
+<ul>
+  <li>ジャンルマスタの管理画面（追加・削除・並び替え）</li>
+  <li>感想・要約のマークダウンレンダリング</li>
+  <li>ページネーション（本の数が増えたとき）</li>
+  <li>月別・年別の読了集計グラフ</li>
+  <li>ISBNや書影の取得（外部API連携）</li>
+  <li>ユーザー認証を導入して複数人で使える形に</li>
+</ul>
+
+<div class="nav">
+  <a href="2026-04-18_reading-record_index.html">← 目次</a> |
+  前: <a href="2026-04-18_reading-record_03_sort.html">ソート機能の実装</a>
+</div>
+
+</body>
+</html>

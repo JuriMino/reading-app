@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>検索機能の実装 - 2026-04-18</title>
+<style>
+  body { font-family: "Hiragino Sans", "Yu Gothic", sans-serif; line-height: 1.7; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #333; }
+  h1 { border-bottom: 3px solid #4a90e2; padding-bottom: 8px; }
+  h2 { border-left: 5px solid #4a90e2; padding-left: 10px; margin-top: 32px; }
+  h3 { color: #4a90e2; margin-top: 24px; }
+  h4 { color: #555; margin-top: 18px; }
+  code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: Menlo, monospace; font-size: 0.9em; }
+  pre { background: #2d2d2d; color: #f8f8f2; padding: 14px; border-radius: 6px; overflow-x: auto; font-size: 0.9em; }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; }
+  .error { background: #ffebee; border-left: 4px solid #e53935; padding: 10px 14px; margin: 12px 0; }
+  .tip { background: #e8f5e9; border-left: 4px solid #43a047; padding: 10px 14px; margin: 12px 0; }
+  .note { background: #fff8e1; border-left: 4px solid #ffc107; padding: 10px 14px; margin: 12px 0; }
+  ul, ol { padding-left: 22px; }
+  a { color: #4a90e2; }
+  .nav { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px 16px; margin: 20px 0; font-size: 0.9em; }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <a href="2026-04-18_reading-record_index.html">← 目次</a> |
+  次: <a href="2026-04-18_reading-record_02_js.html">JSの解説</a>
+</div>
+
+<h1>検索機能の実装</h1>
+<p><strong>やること:</strong> 書籍一覧画面に、キーワード（タイトル・著者・出版社のOR部分一致）／ジャンル／ステータスでの絞り込み機能を追加。</p>
+
+<h2>1. 設計方針</h2>
+<ul>
+  <li><strong>UI</strong>：キーワード入力欄1つ＋ジャンル・ステータスのセレクトを並べるシンプル構成</li>
+  <li><strong>HTTPメソッド</strong>：GET（URLに条件が載るのでブックマーク・共有可能）</li>
+  <li><strong>部分一致</strong>：キーワードはタイトル・著者・出版社のいずれかに含まれればヒット（OR）</li>
+  <li><strong>検索後の入力値保持</strong>：サーバーから <code>$filters</code> で入力値を返してフォームに再表示</li>
+</ul>
+
+<h2>2. コード</h2>
+
+<h3>2-1. BookController@index の書き換え</h3>
+<p><code>app/Http/Controllers/BookController.php</code></p>
+<pre><code>public function index(Request $request)
+{
+    $query = Book::with('genre');
+
+    // キーワード（タイトル・著者・出版社のOR部分一致）
+    if ($request->filled('keyword')) {
+        $keyword = $request->keyword;
+        $query->where(function ($q) use ($keyword) {
+            $q->where('title', 'like', "%{$keyword}%")
+              ->orWhere('author', 'like', "%{$keyword}%")
+              ->orWhere('publisher', 'like', "%{$keyword}%");
+        });
+    }
+
+    // ジャンル
+    if ($request->filled('genre_id')) {
+        $query->where('genre_id', $request->genre_id);
+    }
+
+    // ステータス
+    if ($request->filled('status')) {
+        $query->where('status', $request->status);
+    }
+
+    $books = $query->orderBy('created_at', 'desc')->get();
+
+    return view('books.index', [
+        'books'    => $books,
+        'genres'   => Genre::orderBy('id')->get(),
+        'statuses' => BookStatus::cases(),
+        'filters'  => $request->only(['keyword', 'genre_id', 'status']),
+    ]);
+}</code></pre>
+
+<h3>2-2. 検索フォーム（index.blade.php）</h3>
+<pre><code>&lt;form action="{{ route('books.index') }}" method="get" class="bg-white rounded-md shadow-sm p-4 mb-4"&gt;
+    &lt;div class="grid grid-cols-12 gap-3 items-end"&gt;
+        &lt;div class="col-span-5"&gt;
+            &lt;label class="block text-xs text-gray-500 mb-1"&gt;キーワード&lt;/label&gt;
+            &lt;input type="text" name="keyword" value="{{ $filters['keyword'] ?? '' }}"
+                   placeholder="タイトル・著者・出版社"
+                   class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"&gt;
+        &lt;/div&gt;
+        &lt;div class="col-span-3"&gt;
+            &lt;label class="block text-xs text-gray-500 mb-1"&gt;ジャンル&lt;/label&gt;
+            &lt;select name="genre_id" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"&gt;
+                &lt;option value=""&gt;すべて&lt;/option&gt;
+                @foreach ($genres as $genre)
+                    &lt;option value="{{ $genre-&gt;id }}" @selected(($filters['genre_id'] ?? '') == $genre-&gt;id)&gt;
+                        {{ $genre-&gt;name }}
+                    &lt;/option&gt;
+                @endforeach
+            &lt;/select&gt;
+        &lt;/div&gt;
+        &lt;div class="col-span-2"&gt;
+            &lt;label class="block text-xs text-gray-500 mb-1"&gt;ステータス&lt;/label&gt;
+            &lt;select name="status" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"&gt;
+                &lt;option value=""&gt;すべて&lt;/option&gt;
+                @foreach ($statuses as $status)
+                    &lt;option value="{{ $status-&gt;value }}" @selected(($filters['status'] ?? '') === $status-&gt;value)&gt;
+                        {{ $status-&gt;label() }}
+                    &lt;/option&gt;
+                @endforeach
+            &lt;/select&gt;
+        &lt;/div&gt;
+        &lt;div class="col-span-2 flex gap-2"&gt;
+            &lt;button type="submit" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-md text-sm"&gt;検索&lt;/button&gt;
+            &lt;a href="{{ route('books.index') }}" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-md text-sm"&gt;クリア&lt;/a&gt;
+        &lt;/div&gt;
+    &lt;/div&gt;
+&lt;/form&gt;</code></pre>
+
+<h2>3. ポイント解説</h2>
+
+<h3>3-1. <code>filled()</code> を使う理由</h3>
+<p><code>$request-&gt;filled('keyword')</code> は「値が存在し、かつ空文字ではない」を判定する。<code>isset</code> や <code>has()</code> だと空文字も true になってしまい、不要な <code>WHERE</code> が付く。「すべて」を選んだ場合は <code>value=""</code> が送られるので、<code>filled()</code> で自動的に除外できる。</p>
+
+<h3>3-2. OR条件をクロージャでグルーピングする</h3>
+<p>キーワードのOR条件は <code>where(function ($q) use ($keyword) { ... })</code> で囲む必要がある。囲まないとSQLの優先順位が崩れる：</p>
+<pre><code>-- 囲まないとこうなる（意図しない）
+WHERE title LIKE '%x%' OR author LIKE '%x%' OR publisher LIKE '%x%' AND genre_id = 3
+
+-- 囲うとこうなる（意図どおり）
+WHERE (title LIKE '%x%' OR author LIKE '%x%' OR publisher LIKE '%x%') AND genre_id = 3</code></pre>
+<p><code>AND</code> は <code>OR</code> より優先度が高いため、ジャンル条件だけに <code>AND</code> が効き、キーワード条件のほとんどがOR扱いで広く拾われてしまう。</p>
+
+<h3>3-3. GETメソッドを選ぶ理由</h3>
+<ul>
+  <li>検索は「リソースの取得」＝冪等な操作なのでGETが適切</li>
+  <li>URLにクエリが載るので、ブックマーク・共有・リロードが有効</li>
+  <li>ブラウザの戻るボタンで前の検索結果に戻れる</li>
+</ul>
+
+<h3>3-4. <code>$filters</code> でフォーム入力を保持</h3>
+<p><code>$request-&gt;only([...])</code> で必要なキーだけ抜き出し、ビューに渡す。これにより検索後も入力欄や選択状態が残る。</p>
+
+<h2>4. 発生したエラー・原因・対応</h2>
+
+<h3>4-1. ステータス検索でURLに <code>status</code> が載らない</h3>
+<div class="error">
+<strong>症状:</strong> ステータスを選んで検索しても全件表示される。URLは <code>?keyword=&amp;genre_id=</code> でステータスのパラメータがない。プルダウンも「すべて」にリセットされる。<br>
+<strong>原因:</strong> 検索フォームの <code>&lt;select&gt;</code> に <code>name="status"</code> 属性が抜けていた。
+</div>
+<p><strong>対応:</strong> <code>name="status"</code> を追加。HTMLフォームは <code>name</code> 属性がない要素は送信対象外になる。</p>
+
+<h3>4-2. キーワード検索で一切ヒットしない</h3>
+<div class="error">
+<strong>症状:</strong> タイトルの一部を入力しても、完全一致でも検索結果0件。URLには <code>keyword=サンクチュアリ</code> と正しく載っている。<br>
+<strong>原因:</strong> PHPのダブルクォート内で変数展開の <code>$</code> が抜けていた：<code>"%{keyword}%"</code>
+</div>
+<p><strong>対応:</strong> <code>"%{$keyword}%"</code> に修正。<code>{$変数名}</code> が変数展開の正しい書き方。<code>{keyword}</code> は単なる文字列として扱われ、SQL上は「<code>{keyword}</code>」という文字列を含む本を探すことになっていた。</p>
+<div class="tip">
+<strong>補足:</strong> シンプルに <code>"%$keyword%"</code> でも動作するが、<code>{$keyword}</code> のほうが変数の境界が明確で安全。
+</div>
+
+<h2>5. 動作確認</h2>
+<ol>
+  <li>キーワードに本のタイトルの一部を入力 → 絞り込まれる</li>
+  <li>ジャンルだけ選択して検索 → そのジャンルの本のみ</li>
+  <li>複数条件を組み合わせ → AND で絞り込み</li>
+  <li>「クリア」で初期状態に戻る</li>
+  <li>URLが <code>?keyword=xxx&amp;genre_id=3&amp;status=reading</code> のようになる</li>
+</ol>
+
+<div class="nav">
+  <a href="2026-04-18_reading-record_index.html">← 目次</a> |
+  次: <a href="2026-04-18_reading-record_02_js.html">JSの解説</a>
+</div>
+
+</body>
+</html>

@@ -16,17 +16,54 @@ class BookController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
-        // N+1問題対策: with('genre') を付けないと、ビューで $book->genre を
-        // 参照するたびに genres テーブルへのSELECTが発行される（本の数だけ）。
-        // with を付けると、使われている genre_id をまとめて WHERE IN で1回取得し、
-        // 各 book に紐付けてくれる（Eager Loading）。
-        $books = Book::with('genre')->orderBy('created_at', 'desc')->get();
+        $query = Book::with('genre');
+
+        // キーワード（タイトル・著者・出版社のOR部分一致）
+        if($request->filled('keyword')){
+            $keyword = $request->keyword;
+            $query->where(function($q) use ($keyword){
+                $q->where('title','like', "%{$keyword}%")
+                ->orWhere('author','like', "%{$keyword}%")
+                ->orWhere('publisher','like', "%{$keyword}%");
+            });
+        }
+
+        // ジャンル
+        if($request->filled('genre_id')){
+            $query->where('genre_id', $request->genre_id);
+        }
+
+        // ステータス
+        if($request->filled('status')){
+            $query->where('status', $request->status);
+        }
+
+
+        //許可するソートオプション　（キー：表示よう識別子、値：[カラム、昇降]）
+        $sortOptions = [
+            'created_at_desc'  => ['created_at', 'desc'],
+            'created_at_asc'   => ['created_at', 'asc'],
+            'title_desc'       => ['title', 'desc'],
+            'title_asc'        => ['title', 'asc'],
+            'author_desc'      => ['author', 'desc'],
+            'author_asc'       => ['author', 'asc'],
+            'finished_at_desc' => ['finished_at', 'desc'],
+            'finished_at_asc'  => ['finished_at', 'asc'],
+        ];
+
+        // リクエストから受け取り、許可リストになければデフォルト
+        $sort = $request->input('sort', 'created_at_desc');
+        [$column, $direction] = $sortOptions[$sort] ?? $sortOptions['created_at_desc'];
+
+        $books = $query->orderBy($column, $direction)->get();
 
         return view('books.index', [
-            'books'  => $books,
+            'books'    => $books,
+            'genres'   => Genre::orderBy('id')->get(),
             'statuses' => BookStatus::cases(),
+            'filters'  => $request->only(['keyword','genre_id','status','sort']),
         ]);
     }
 
@@ -104,6 +141,9 @@ class BookController extends Controller
 
         $book->update($validated);
 
-        return response()->json(['status' => $book->status->value]);
+        return response()->json([
+            'status' => $book->status->value,
+            'badgeClass' => $book->status->badgeClass(),
+            ]);
     }
 }

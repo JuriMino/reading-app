@@ -27,7 +27,7 @@ class StoreBookRequest extends FormRequest
             'publisher'  => ['nullable', 'string', 'max:255'],
             'genre_id'   => ['required', 'exists:genres,id'],
             'started_at' => ['nullable', 'date'],
-            'finised_at' => ['nullable', 'date', 'after_or_equal:started_at'],
+            'finished_at' => ['nullable', 'date', 'after_or_equal:started_at'],
             'status'     => ['required', 'string'],
             'summary'    => ['nullable', 'string'],
             'impression' => ['nullable', 'string'],
@@ -37,10 +37,10 @@ class StoreBookRequest extends FormRequest
     public function messages()
     {
         return [
-            'title'      => 'タイトルは必須です',
-            'author'     => '著者は必須です',
-            'genre_id'   => 'ジャンルを選択してください',
-            'status'     => 'ステータスを選択してください',
+            'title.required'      => 'タイトルは必須です',
+            'author.required'     => '著者は必須です',
+            'genre_id.required'   => 'ジャンルを選択してください',
+            'status.required'     => 'ステータスを選択してください',
             'finished_at.after_or_equal' => '読了日は読書開始日以降にしてください',
         ];
     }

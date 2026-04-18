@@ -50,15 +50,9 @@
         <div>
             <dt class="text-xs text-gray-500 mb-1">ステータス</dt>
             <dd>
-                <select name="" id=""
-                    class="status-select border border-gray-300 rounded-md px-3 py-2 text-sm"
-                    data-book-id="{{ $book->id }}">
-                    @foreach ($statuses as $status)
-                        <option value="{{ $status->value }}" @selected($book->status === $status)>
-                            {{ $status->label() }}
-                        </option>
-                    @endforeach
-                </select>
+                <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border  {{ $book->status->badgeClass() }}">
+                    {{ $book->status->label() }}
+                </span>
             </dd>
         </div>
     </dl>

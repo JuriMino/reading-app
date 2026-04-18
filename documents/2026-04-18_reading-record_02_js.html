@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>JSの解説（ステータスバッジ化＋即時保存）- 2026-04-18</title>
+<style>
+  body { font-family: "Hiragino Sans", "Yu Gothic", sans-serif; line-height: 1.7; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #333; }
+  h1 { border-bottom: 3px solid #4a90e2; padding-bottom: 8px; }
+  h2 { border-left: 5px solid #4a90e2; padding-left: 10px; margin-top: 32px; }
+  h3 { color: #4a90e2; margin-top: 24px; }
+  h4 { color: #555; margin-top: 18px; }
+  code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: Menlo, monospace; font-size: 0.9em; }
+  pre { background: #2d2d2d; color: #f8f8f2; padding: 14px; border-radius: 6px; overflow-x: auto; font-size: 0.9em; }
+  pre code { background: transparent; color: inherit; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; }
+  .error { background: #ffebee; border-left: 4px solid #e53935; padding: 10px 14px; margin: 12px 0; }
+  .tip { background: #e8f5e9; border-left: 4px solid #43a047; padding: 10px 14px; margin: 12px 0; }
+  .note { background: #fff8e1; border-left: 4px solid #ffc107; padding: 10px 14px; margin: 12px 0; }
+  ul, ol { padding-left: 22px; }
+  a { color: #4a90e2; }
+  .nav { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px 16px; margin: 20px 0; font-size: 0.9em; }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <a href="2026-04-18_reading-record_index.html">← 目次</a> |
+  前: <a href="2026-04-18_reading-record_01_search.html">検索機能の実装</a> |
+  次: <a href="2026-04-18_reading-record_03_sort.html">ソート機能の実装</a>
+</div>
+
+<h1>JSの解説（ステータスバッジ化＋即時保存）</h1>
+<p><strong>やること:</strong> ステータス表示をプルダウン単体からバッジ風の色付き表示に変更し、一覧画面では選択を変えた瞬間に非同期でDB保存＆色も即時更新する。</p>
+
+<h2>1. 実装全体像</h2>
+<p>ユーザー体験として目指すのは「一覧のステータスプルダウンを変えると、リロードなしで保存され、色もその場で変わる」こと。これを実現するには：</p>
+<ol>
+  <li>各ステータスに対応する色（CSSクラス）を Enum 側に定義</li>
+  <li>ビュー（一覧・詳細）でそのクラスを出力 → 見た目をバッジ化</li>
+  <li>JS で <code>&lt;select&gt;</code> の <code>change</code> イベントを監視 → fetch でPATCH送信</li>
+  <li>サーバーが新しい <code>badgeClass</code> を返す → JS でクラスを付け替えて色変更</li>
+</ol>
+
+<h2>2. 前提：ステータス表示のバッジ化</h2>
+
+<h3>2-1. Enum に <code>badgeClass()</code> メソッドを追加</h3>
+<p><code>app/Enums/BookStatus.php</code></p>
+<pre><code>public function badgeClass(): string
+{
+    return match($this) {
+        self::Unread  =&gt; 'bg-red-100 text-red-700 border-red-200',
+        self::Reading =&gt; 'bg-blue-100 text-blue-700 border-blue-200',
+        self::Done    =&gt; 'bg-green-100 text-green-700 border-green-200',
+    };
+}</code></pre>
+<div class="tip">
+ビューに色分岐を書くとロジックが散らばる。Enumにメソッドとして持たせれば、一覧・詳細・API応答のどこからでも同じロジックを再利用できる。
+</div>
+
+<h3>2-2. 詳細画面：固定バッジ化</h3>
+<p><code>resources/views/books/show.blade.php</code> のステータス部分を編集不可な固定表示に。</p>
+<pre><code>&lt;dd&gt;
+    &lt;span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border {{ $book-&gt;status-&gt;badgeClass() }}"&gt;
+        ● {{ $book-&gt;status-&gt;label() }}
+    &lt;/span&gt;
+&lt;/dd&gt;</code></pre>
+
+<h3>2-3. 一覧画面：バッジ風プルダウン</h3>
+<p><code>&lt;select&gt;</code> 自体に <code>badgeClass()</code> を適用し、見た目はバッジ・機能は編集可能なプルダウンに。</p>
+<pre><code>&lt;select class="status-select {{ $book-&gt;status-&gt;badgeClass() }} border rounded-full px-3 py-1 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+        data-book-id="{{ $book-&gt;id }}"&gt;
+    @foreach ($statuses as $status)
+        &lt;option value="{{ $status-&gt;value }}" @selected($book-&gt;status === $status)&gt;
+            {{ $status-&gt;label() }}
+        &lt;/option&gt;
+    @endforeach
+&lt;/select&gt;</code></pre>
+
+<h2>3. サーバー側：レスポンスに色クラスを含める</h2>
+<p><code>BookController@updateStatus</code></p>
+<pre><code>public function updateStatus(Request $request, Book $book)
+{
+    $validated = $request-&gt;validate([
+        'status' =&gt; ['required', Rule::enum(BookStatus::class)],
+    ]);
+
+    $book-&gt;update($validated);
+
+    return response()-&gt;json([
+        'status'     =&gt; $book-&gt;status-&gt;value,
+        'badgeClass' =&gt; $book-&gt;status-&gt;badgeClass(),
+    ]);
+}</code></pre>
+<p>色の切り替えロジックをJS側に持たせるとEnumと二重管理になる。「現在のステータスに対応する色クラス文字列」をサーバーに返してもらえば、JSは受け取ったクラスを付けるだけで済む。</p>
+
+<h2>4. JSの実装</h2>
+<p><code>resources/js/app.js</code></p>
+<pre><code>document.addEventListener('DOMContentLoaded', () =&gt; {
+    const tokenMeta = document.querySelector('meta[name="csrf-token"]');
+    if (!tokenMeta) return;
+    const token = tokenMeta.content;
+
+    // 付け替え対象の色クラス（全ステータスぶんを列挙、各要素は単一クラス名）
+    const COLOR_CLASSES = [
+        'bg-red-100', 'text-red-700', 'border-red-200',
+        'bg-blue-100', 'text-blue-700', 'border-blue-200',
+        'bg-green-100', 'text-green-700', 'border-green-200',
+    ];
+
+    document.querySelectorAll('.status-select').forEach((select) =&gt; {
+        select.addEventListener('change', async () =&gt; {
+            const bookId = select.dataset.bookId;
+            const status = select.value;
+
+            try {
+                const res = await fetch(`/books/${bookId}/status`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': token,
+                    },
+                    body: JSON.stringify({ status }),
+                });
+
+                if (!res.ok) throw new Error('保存に失敗しました');
+
+                const data = await res.json();
+
+                // 古い色クラスを全部外して、新しい色クラスを付与
+                select.classList.remove(...COLOR_CLASSES);
+                select.classList.add(...data.badgeClass.split(' '));
+            } catch (err) {
+                alert(err.message);
+            }
+        });
+    });
+});</code></pre>
+
+<h2>5. 各パーツのポイント解説</h2>
+
+<h3>5-1. CSRFトークンを <code>meta</code> タグから取る</h3>
+<p>Laravel は POST/PUT/PATCH/DELETE に CSRFトークンを要求する。フォーム送信なら <code>@csrf</code> が自動でhiddenを入れてくれるが、JS経由の fetch では自分でヘッダに付ける必要がある。共通レイアウトに以下が入っている前提：</p>
+<pre><code>&lt;meta name="csrf-token" content="{{ csrf_token() }}"&gt;</code></pre>
+<p>JSでは <code>document.querySelector('meta[name="csrf-token"]').content</code> で取り出し、fetchの <code>X-CSRF-TOKEN</code> ヘッダに入れる。</p>
+
+<h3>5-2. <code>dataset</code> で <code>data-*</code> 属性を読む</h3>
+<table>
+<tr><th>HTML</th><th>JS</th></tr>
+<tr><td><code>data-book-id="5"</code></td><td><code>element.dataset.bookId</code></td></tr>
+<tr><td><code>data-user-name="taro"</code></td><td><code>element.dataset.userName</code></td></tr>
+</table>
+<p>ハイフン区切りが自動でキャメルケースに変換される。</p>
+
+<h3>5-3. <code>classList</code> でクラス操作</h3>
+<pre><code>element.classList.add('foo', 'bar');      // 追加
+element.classList.remove('foo', 'bar');   // 削除
+element.classList.toggle('foo');          // オンオフ切替
+element.classList.contains('foo');        // 有無チェック</code></pre>
+<p><strong>引数は1要素1クラス名。</strong>スペース区切りの文字列を1つ渡すとエラーになる（後述）。</p>
+
+<h3>5-4. スプレッド構文 <code>...array</code></h3>
+<p><code>classList.remove(...COLOR_CLASSES)</code> は配列の各要素を個別の引数として展開する書き方。以下と等価：</p>
+<pre><code>classList.remove('bg-red-100', 'text-red-700', 'border-red-200', ...);</code></pre>
+
+<h3>5-5. Vite dev server</h3>
+<p>開発中は Vite を起動しておく必要がある（<code>@vite</code> ディレクティブが Vite から JS・CSS を読み込むため）。別ターミナルで：</p>
+<pre><code>sail npm run dev</code></pre>
+
+<h2>6. 発生したエラー・原因・対応</h2>
+
+<h3>6-1. プルダウン変更しても何も起きない</h3>
+<div class="error">
+<strong>原因:</strong> <code>resources/views/layouts/app.blade.php</code> の <code>@vite</code> ディレクティブが <code>recources/js/app.js</code>（タイポ）になっていて、JS が読み込まれていなかった。
+</div>
+<p><strong>対応:</strong> <code>resources/js/app.js</code> に修正。ビューのソースを表示して<code>&lt;script&gt;</code>タグの src を確認するのが早い。</p>
+
+<h3>6-2. <code>Cannot read properties of undefined (reading 'bookId')</code></h3>
+<div class="error">
+<strong>原因:</strong> プロパティ名のタイポ。<code>select.database.bookId</code> （正：<code>dataset</code>）、<code>select.ariaValueMax</code>（正：<code>value</code>）。
+</div>
+<p><strong>対応:</strong></p>
+<ul>
+  <li><code>database</code> → <code>dataset</code>：<code>data-*</code>属性を取るプロパティ名</li>
+  <li><code>ariaValueMax</code> → <code>value</code>：<code>&lt;select&gt;</code>や<code>&lt;input&gt;</code>の値を取る標準プロパティ</li>
+</ul>
+<div class="note">
+<strong>教訓:</strong> エディタの補完に頼っていると、存在はするが全く別物のプロパティ（ariaValueMax等）を選んでしまうことがある。<code>dataset</code>・<code>value</code>は標準中の標準なので暗記しておく。
+</div>
+
+<h3>6-3. <code>Failed to execute 'remove' on 'DOMTokenList': The token provided contains HTML space characters</code></h3>
+<div class="error">
+<strong>原因:</strong> <code>COLOR_CLASSES</code> 配列の各要素にスペース区切りで複数クラスを入れていた。
+<pre><code>// NG
+const COLOR_CLASSES = [
+    'bg-red-100 text-red-700 border-red-200',   // ← 1要素にスペース入り
+    ...
+];</code></pre>
+<code>classList.remove</code> は1引数=1クラス名が必須で、スペース入りの文字列は受け付けない。
+</div>
+<p><strong>対応:</strong> 各クラスを配列の別要素に分割。</p>
+<pre><code>// OK
+const COLOR_CLASSES = [
+    'bg-red-100', 'text-red-700', 'border-red-200',
+    'bg-blue-100', 'text-blue-700', 'border-blue-200',
+    'bg-green-100', 'text-green-700', 'border-green-200',
+];</code></pre>
+<p>サーバーから受け取る <code>data.badgeClass</code> はスペース区切り文字列なので、<code>.split(' ')</code> で分解してから <code>add</code> に渡す。</p>
+
+<h2>7. 動作確認</h2>
+<ol>
+  <li>一覧画面でステータスプルダウンを変更 → ページ遷移なし</li>
+  <li>色もその瞬間に変わる（未読=赤、読書中=青、読了=緑）</li>
+  <li>F5でリロードしても変更が反映されている → DB保存成功</li>
+  <li>DevTools の Network タブで <code>PATCH /books/{id}/status</code> が 200 を返していることを確認</li>
+</ol>
+
+<div class="nav">
+  <a href="2026-04-18_reading-record_index.html">← 目次</a> |
+  前: <a href="2026-04-18_reading-record_01_search.html">検索機能の実装</a> |
+  次: <a href="2026-04-18_reading-record_03_sort.html">ソート機能の実装</a>
+</div>
+
+</body>
+</html>

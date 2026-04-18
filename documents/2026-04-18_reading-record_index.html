@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>reading-record 開発記録 2026-04-18 目次</title>
+<style>
+  body { font-family: "Hiragino Sans", "Yu Gothic", sans-serif; line-height: 1.7; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #333; }
+  h1 { border-bottom: 3px solid #4a90e2; padding-bottom: 8px; }
+  h2 { border-left: 5px solid #4a90e2; padding-left: 10px; margin-top: 32px; }
+  h3 { color: #4a90e2; margin-top: 24px; }
+  code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: Menlo, monospace; font-size: 0.9em; }
+  .tip { background: #e8f5e9; border-left: 4px solid #43a047; padding: 10px 14px; margin: 12px 0; }
+  .note { background: #fff8e1; border-left: 4px solid #ffc107; padding: 10px 14px; margin: 12px 0; }
+  ul, ol { padding-left: 22px; }
+  a { color: #4a90e2; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .toc { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 6px; padding: 16px 24px; margin: 16px 0; }
+  .toc li { margin: 6px 0; }
+</style>
+</head>
+<body>
+
+<h1>reading-record 開発記録</h1>
+<p><strong>日付:</strong> 2026-04-18</p>
+<p><strong>概要:</strong> 昨日までに完成した CRUD 画面をベースに、ステータスの見た目改善とリロードなし更新、検索・ソート機能を追加。最後にUI調整とバリデーション修正を実施し、読書記録アプリの主要機能が一通り揃った。</p>
+
+<h2>今日の作業サマリー</h2>
+<ul>
+  <li>ステータス表示をバッジ風に改善（Enum に <code>badgeClass()</code> メソッド追加）</li>
+  <li>一覧画面のステータスプルダウンを変更した瞬間に保存する JS を実装（ページリロードなし）</li>
+  <li>キーワード・ジャンル・ステータスでの絞り込み検索を実装</li>
+  <li>登録日・タイトル・著者・読了日による並び替え（セレクトボックス方式）を実装</li>
+  <li>UI 微調整：登録日列の追加、全体幅拡張、新規登録ボタンをヘッダーから本文へ移動</li>
+  <li><code>StoreBookRequest</code> のバリデーション修正（タイポ・メッセージキー形式）</li>
+</ul>
+
+<h2>ドキュメント一覧</h2>
+<div class="toc">
+<ol>
+  <li><a href="2026-04-18_reading-record_01_search.html">検索機能の実装</a>
+    <br><span style="color:#666;font-size:0.9em;">キーワード・ジャンル・ステータスによる絞り込み</span>
+  </li>
+  <li><a href="2026-04-18_reading-record_02_js.html">JSの解説（ステータスバッジ化＋即時保存）</a>
+    <br><span style="color:#666;font-size:0.9em;">Enum拡張・バッジ表示・fetch APIでの非同期更新</span>
+  </li>
+  <li><a href="2026-04-18_reading-record_03_sort.html">ソート機能の実装</a>
+    <br><span style="color:#666;font-size:0.9em;">セレクトボックス方式・ホワイトリスト指定</span>
+  </li>
+  <li><a href="2026-04-18_reading-record_04_summary.html">UI調整・バリデーション修正・全体まとめ</a>
+    <br><span style="color:#666;font-size:0.9em;">細かな改善点・今日の学びと注意点</span>
+  </li>
+</ol>
+</div>
+
+<h2>関連ファイル</h2>
+<ul>
+  <li><code>app/Http/Controllers/BookController.php</code> — 検索・ソート処理を追加</li>
+  <li><code>app/Enums/BookStatus.php</code> — <code>badgeClass()</code> メソッド追加</li>
+  <li><code>app/Http/Requests/StoreBookRequest.php</code> — タイポ＆メッセージキー修正</li>
+  <li><code>resources/js/app.js</code> — ステータス即時保存JS追加</li>
+  <li><code>resources/views/layouts/app.blade.php</code> — 全体幅・ヘッダー整理</li>
+  <li><code>resources/views/books/index.blade.php</code> — 検索フォーム・ソートセレクト・登録日列追加</li>
+  <li><code>resources/views/books/show.blade.php</code> — ステータスをバッジ固定表示に変更</li>
+</ul>
+
+<h2>前日までの記録</h2>
+<ul>
+  <li><a href="2026-04-15_reading-record_開発記録.html">2026-04-15 開発記録</a></li>
+  <li><a href="2026-04-16_reading-record_開発記録.html">2026-04-16 開発記録</a></li>
+  <li><a href="2026-04-17_reading-record_開発記録.html">2026-04-17 開発記録</a></li>
+</ul>
+
+</body>
+</html>
